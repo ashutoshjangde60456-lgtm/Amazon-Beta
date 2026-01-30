@@ -6,6 +6,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from textwrap import dedent
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import streamlit as st
@@ -32,8 +33,11 @@ div.stButton>button,.stDownloadButton>button{background:var(--accent)!important;
 
 # ─────────────────────────────────────────────────────────────────────
 # Template layout constants
+# Acceptable target sheet names (case-insensitive): Modèle, Modello, Sjabloon, Szablon, Plantilla, Ireland, Template
 # ─────────────────────────────────────────────────────────────────────
-MASTER_TEMPLATE_SHEET = "Modello"    # target sheet
+MASTER_TEMPLATE_SHEETS = [
+    "Modèle", "Modello", "Sjabloon", "Szablon", "Plantilla", "Ireland", "Template","Vorlage"
+]
 MASTER_DISPLAY_ROW    = 4            # human headers
 MASTER_SECONDARY_ROW  = 5            # bullet disambiguators
 MASTER_DATA_START_ROW = 7            # first data row
@@ -106,6 +110,29 @@ def safe_filename(name: str, fallback: str = "final_masterfile") -> str:
     name = name.strip()
     name = re.sub(r"[^A-Za-z0-9._ -]+", "", name)
     return name or fallback
+
+def pick_template_sheet(sheetnames: list) -> Optional[str]:
+    """Return the first sheet that matches allowed names (exact, then substring)."""
+    if not sheetnames:
+        return None
+
+    def norm_name(s: str) -> str:
+        return str(s).strip().casefold()
+
+    sheet_norm_map = {norm_name(s): s for s in sheetnames}
+    # exact match first
+    for cand in MASTER_TEMPLATE_SHEETS:
+        cn = norm_name(cand)
+        if cn in sheet_norm_map:
+            return sheet_norm_map[cn]
+
+    # fallback: substring match (case-insensitive)
+    for cand in MASTER_TEMPLATE_SHEETS:
+        cn = norm_name(cand)
+        for sn in sheetnames:
+            if cn in norm_name(sn):
+                return sn
+    return None
 
 # ── ZIP / XML helpers ────────────────────────────────────────────────
 def _find_sheet_part_path(z: zipfile.ZipFile, sheet_name: str) -> str:
@@ -414,14 +441,16 @@ if go:
     slog("⏳ Reading Template headers…")
     t0 = time.time()
     wb_ro = load_workbook(io.BytesIO(master_bytes), read_only=True, data_only=True, keep_links=True)
-    if MASTER_TEMPLATE_SHEET not in wb_ro.sheetnames:
-        st.error(f"Sheet **'{MASTER_TEMPLATE_SHEET}'** not found in the masterfile."); st.stop()
-    ws_ro = wb_ro[MASTER_TEMPLATE_SHEET]
+    template_sheet = pick_template_sheet(wb_ro.sheetnames)
+    if not template_sheet:
+        st.error(f"No template sheet found. Looking for any of: {', '.join(MASTER_TEMPLATE_SHEETS)}.")
+        st.stop()
+    ws_ro = wb_ro[template_sheet]
     used_cols = worksheet_used_cols(ws_ro, header_rows=(MASTER_DISPLAY_ROW, MASTER_SECONDARY_ROW), hard_cap=2048, empty_streak_stop=8)
     display_headers   = [ws_ro.cell(row=MASTER_DISPLAY_ROW,   column=c).value or "" for c in range(1, used_cols+1)]
     secondary_headers = [ws_ro.cell(row=MASTER_SECONDARY_ROW, column=c).value or "" for c in range(1, used_cols+1)]
     wb_ro.close()
-    slog(f"✅ Headers loaded (cols={used_cols}) in {time.time()-t0:.2f}s")
+    slog(f"✅ Headers loaded from '{template_sheet}' (cols={used_cols}) in {time.time()-t0:.2f}s")
 
     # Pick best onboarding sheet
     try:
@@ -505,7 +534,7 @@ if go:
     t_write = time.time()
     out_bytes = fast_patch_template(
         master_bytes=master_bytes,
-        sheet_name=MASTER_TEMPLATE_SHEET,
+        sheet_name=template_sheet,
         header_row=MASTER_DISPLAY_ROW,
         start_row=MASTER_DATA_START_ROW,
         used_cols=used_cols,
@@ -529,7 +558,7 @@ if go:
 with st.expander("📘 How to use (step-by-step)", expanded=False):
     st.markdown(dedent(f"""
     **This tool**
-    - Writes only into `{MASTER_TEMPLATE_SHEET}` and preserves everything else (including macros).
+    - Writes only into sheets named one of: `{", ".join(MASTER_TEMPLATE_SHEETS)}` and preserves everything else (including macros).
     - Uses a fast XML sheet swap (seconds) — no slow fallbacks.
 
     **Run**
