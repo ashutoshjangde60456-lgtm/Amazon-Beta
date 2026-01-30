@@ -38,7 +38,7 @@ div.stButton>button,.stDownloadButton>button{background:var(--accent)!important;
 MASTER_TEMPLATE_SHEETS = [
     "Modèle", "Modello", "Sjabloon", "Szablon", "Plantilla", "Ireland", "Template","Vorlage"
 ]
-MASTER_DISPLAY_ROW    = 4            # human headers
+MASTER_DISPLAY_ROW    = 5            # human headers now on row 5
 MASTER_SECONDARY_ROW  = 5            # bullet disambiguators
 MASTER_DATA_START_ROW = 7            # first data row
 
